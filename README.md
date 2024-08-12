@@ -10,7 +10,7 @@ The objective of this project is to is to provide an analytical instruments to p
 
 - Total phosphorus and total nitrogen – nutrients that can lead to elevated plant and algae growth
 
-- Ammonia toxicity – a nutrient that can be toxic to aquatic life  
+- Ammonia toxicity – a nutrient that can be toxic to aquatic life 
 
 This data is usually collected once a month at different dates and schedules across councils. This project will access the data servers of councils every hour to look for new data records. A Dagster job will handle the incremental updated to the RAW schema in Snowflake. DBT assets will be used to summarise the dataset and generate fact and dimension tables as well as a big table to be used in a streamlit project.
 
