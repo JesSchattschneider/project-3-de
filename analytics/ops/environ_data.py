@@ -3,13 +3,9 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import csv
 from dagster import op, OpExecutionContext, Config
 from analytics.ops import load_data_to_snowflake 
 import numpy as np
-
-URL_LIST = "analytics/data/list_of_urls.csv"
-URL_VARIABLES_LWQ = "analytics/data/transfer_table_LWQ.csv"
 
 class EnvironDataConfig(Config):
     date_start: str
@@ -95,7 +91,6 @@ def pull_lwq_data(context: OpExecutionContext,
                   config: EnvironDataConfig,
                   sites: list[str] = [],
                   variables: list[str] = [],
-                  url_path: str = URL_LIST,
                   limit: int = 5) -> pd.DataFrame:
     context.log.info("Opening file with URLs")
     root_urls = []
@@ -104,26 +99,59 @@ def pull_lwq_data(context: OpExecutionContext,
     date_start = config.date_start
     date_end = config.date_end
     context.log.info(f"Date range: {date_start} to {date_end}")
-    
-    with open(url_path, "r") as fp:
-        context.log.info("Reading URL list data")
-        csv_reader = csv.reader(fp)
-        urls_all = [row for row in csv_reader]
+
+    try:
+        snowflake_resource_con = context.resources.snowflake_resource
+        with snowflake_resource_con.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT * from list_of_urls")
+                # Fetch all rows from the executed query
+                rows = cursor.fetchall()
+                
+                # Get the column names from the cursor description
+                column_names = [desc[0] for desc in cursor.description]
+                
+                # Create a DataFrame from the fetched data
+                urls_all = pd.DataFrame(rows, columns=column_names)
+                # all columns are converted to lowercase
+                urls_all.columns = map(str.lower, urls_all.columns)
+
+    except Exception as e:
+        context.log.error(f"Error getting sites from snowflake: {e}")
+        return pd.DataFrame()  # Return an empty DataFrame in case of error
         
     context.log.info(f"Councils selected: {config.councils}")
 
     if not variables:
-        with open(URL_VARIABLES_LWQ, "r") as tp:
-            context.log.info("Reading transfer table data")
-            csv_transfer = csv.reader(tp)
-            vars_all = [row for row in csv_transfer]
+        try:
+            snowflake_resource_con = context.resources.snowflake_resource
+            with snowflake_resource_con.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT * from transfer_table")
+                    # Fetch all rows from the executed query
+                    rows = cursor.fetchall()
+                    
+                    # Get the column names from the cursor description
+                    column_names = [desc[0] for desc in cursor.description]
+                    
+                    # Create a DataFrame from the fetched data
+                    vars_all = pd.DataFrame(rows, columns=column_names)
+                    # all columns are converted to lowercase
+                    vars_all.columns = map(str.lower, vars_all.columns)
+                    
+        except Exception as e:
+            context.log.error(f"Error getting sites from snowflake: {e}")
+            return pd.DataFrame()  # Return an empty DataFrame in case of error
 
     urls = []
     for council in config.councils:
-        root_urls = [url[3] for url in urls_all if url[0] == council][0]
+        # select the value in column 3 where column 0 is equal to council
+        root_urls = urls_all.loc[urls_all['agency'] == council, 'soslwq'].values[0]
         context.log.info(f"Retrieved root URLs: {root_urls}")
-        if vars_all:
-            variables = [var[1] for var in vars_all if var[0] == council]
+        # if var_all is not empty, get the unique callname where agency is equal to council
+        if vars_all is not None and not vars_all.empty:
+            variables = vars_all.loc[vars_all['agency'] == council, 'callname'].unique().tolist()
+
             context.log.info(f"Retrieved variables: {variables}")
 
         if not sites:
@@ -212,13 +240,10 @@ def pull_lwq_data(context: OpExecutionContext,
 
     context.log.info(f"Number of URLs: {number_of_urls}\nNumber of failed URLs: {failed_urls}")
 
-    # convert vars_all to DataFrame
-    vars_all = pd.DataFrame(vars_all[1:], columns=vars_all[0])
-
     # merge to get lawa site id
     final_df = final_df.merge(sites_metadata, how='left', left_on='site', right_on='COUNCILSITEID')
     # merge with transfer table to get variable name - merge based on Agency and CallName for transfer and variable and COUNCIL for final_df
-    final_df = final_df.merge(vars_all, how='left', left_on=['variable', 'COUNCIL'], right_on=['CallName', 'Agency'])
+    final_df = final_df.merge(vars_all, how='left', left_on=['variable', 'COUNCIL'], right_on=['callname', 'agency'])
     # convert all columns to lowercase
     final_df.columns = final_df.columns.str.lower()
 
@@ -235,12 +260,7 @@ def pull_lwq_data(context: OpExecutionContext,
     df_columns_meta = df_columns_meta.insert(0, 'id')
 
     df_metadata = final_df[df_columns_meta]
-
-        # Save the final_df to a CSV file
-    # df_data.to_csv("analytics/data/final_df.csv", index=False)
-    # df_metadata.to_csv("analytics/data/final_df_metadata.csv", index=False)
-    
-    # context.log.info("Final DataFrame saved to 'analytics/data/final_df.csv'.")
+    # todo: add to db
 
     context.log.info("Add to DB: data and metadata")
 

@@ -11,33 +11,46 @@ VARS = ["councilsiteid", "siteid", "lawasiteid",
         "lfenzid", "ltype", "geomorphicltype",
         "region", "agency", "catchment", "lwquality", "macro", "swquality"]
 
-URL_LIST = "analytics/data/list_of_urls.csv"
-
 @op(required_resource_keys={"snowflake_resource"})
 def process_wfs_data(context: OpExecutionContext,
                      modules: list[str],
-                     vars: list[str] = VARS,
-                     url_path: str = URL_LIST) -> pd.DataFrame:
+                     vars: list[str] = VARS) -> pd.DataFrame:
     """Processes WFS data for the given council partition."""
 
     context.log.info("Opening file with URLs")
-    councils_wfs = []
-    with open(url_path, "r") as fp:
-        context.log.info("Reading WFS data")
-        csv_reader = csv.reader(fp)
-        for row in csv_reader:
-            councils_wfs.append({"council": row[0], "wfs": row[1]})
+
+    try:
+        snowflake_resource_con = context.resources.snowflake_resource
+        with snowflake_resource_con.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT agency as council, wfs from list_of_urls")
+                # Fetch all rows from the executed query
+                rows = cursor.fetchall()
+                
+                # Get the column names from the cursor description
+                column_names = [desc[0] for desc in cursor.description]
+                
+                # Create a DataFrame from the fetched data
+                councils_wfs = pd.DataFrame(rows, columns=column_names)
+                # all columns are converted to lowercase
+                councils_wfs.columns = map(str.lower, councils_wfs.columns)
+                
+    except Exception as e:
+        context.log.error(f"Error getting sites from snowflake: {e}")
+        return pd.DataFrame()  # Return an empty DataFrame in case of error
 
     context.log.info("Filtering data based on partition")
-    selected_councils = [council for council in councils_wfs if council["council"] == context.partition_key]
-
+    
+    # for each row in the dataframe, loop through the rows and get sites
     results = []
-    for council in selected_councils:
-        context.log.info(f"Getting WFS data for: {council.get('council')}")
-        response = requests.get(url=council.get("wfs"))
+    for index, row in councils_wfs.iterrows():
+        council_str=str(row["council"])
+        context.log.info(f"Getting WFS data for: {council_str}")
+
+        response = requests.get(url=row["wfs"])
         data = {
-            "council": council.get("council"),
-            "url": council.get("wfs"),
+            "council": row["council"],
+            "url": row["wfs"],
             "status": "success" if response.status_code == 200 else "failed",
             "partition_key": context.partition_key,
             "creation_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -87,13 +100,13 @@ def process_wfs_data(context: OpExecutionContext,
             context.log.info("Replace np.nan with None and add lawa_site and council column")
             df = df.replace({np.nan: None})
             df['lawa_site'] = "yes"
-            df["council"] = council.get("council")
+            df["council"] = council_str
 
             context.log.info(f"Add to DB: Found sites for {module} module")
             snowflake_resource_con = context.resources.snowflake_resource
             load_data_to_snowflake(snowflake_resource_con = snowflake_resource_con, 
                                      df = df, 
                                      table_name =  f"{module}_wfs_table",
-                                     council = council.get("council"),
+                                     council = council_str,
                                      logger = context.log)
     return df
