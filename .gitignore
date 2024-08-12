@@ -3,6 +3,7 @@
 
 # dagster
 tmp*
+data/
 
 # terraform
 *.terraform*
