@@ -5,7 +5,6 @@ from dagster import AssetExecutionContext
 
 # Corrected path to point to the correct dbt project directory
 dbt_project_dir = Path(__file__).joinpath("..", "..", "..", "..", "warehouse_snowflake").resolve()
-print(f"dbt_project_dir: {dbt_project_dir}")
 dbt_warehouse_resource = DbtCliResource(project_dir=os.fspath(dbt_project_dir))
 
 # generate manifest
@@ -17,8 +16,6 @@ dbt_manifest_path = (
     .wait()
     .target_path.joinpath("manifest.json")
 )
-
-print(f"dbt_manifest_path: {dbt_manifest_path}")
 
 # Check if the manifest.json file exists and raise an error if not
 if not dbt_manifest_path.exists():

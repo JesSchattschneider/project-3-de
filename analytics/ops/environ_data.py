@@ -9,6 +9,7 @@ import numpy as np
 
 class EnvironDataConfig(Config):
     date_start: str
+    # TODO: convert date_start to datetime and set date_end to date_start + 1 year
     date_end: str = "2030-01-01"
     councils: list[str] = ["ecan"]
 
@@ -247,8 +248,18 @@ def pull_lwq_data(context: OpExecutionContext,
     # convert all columns to lowercase
     final_df.columns = final_df.columns.str.lower()
 
-    # create column for primary key
-    final_df['id'] = final_df['lawasiteid'] + "_" + final_df['councilsiteid'] + "_" + final_df['lawaname'] + "_" + final_df['t']
+    # if t is missing, set t to missing
+    final_df['t'] = final_df['t'].fillna('missing')
+
+    # Create a column for primary key
+    final_df['id'] = final_df['lawasiteid'] + "_" + final_df['councilsiteid'] + "_" + final_df['lawaname'] + "_"
+
+    # If the value in 't' is equal to 'missing', set 'id' column accordingly
+    final_df['id'] = final_df['id'] + np.where(
+        final_df['t'].str.lower() == 'missing', 
+        f'error-{date_start}-{date_end}', 
+        final_df['t']
+    )
 
     # select data df, following columns: id, date, variable, value,  url, status_code,	error, site, variable, T, Value
     df_columns = ['id', 't', 'site', 'variable', 'value', 'error', 'status_code', 'url']
@@ -262,12 +273,13 @@ def pull_lwq_data(context: OpExecutionContext,
     df_metadata = final_df[df_columns_meta]
     # todo: add to db
 
-    context.log.info("Add to DB: data and metadata")
-
     # Replace np.nan with None
     context.log.info("Replace np.nan with None and add lawa_site and council column")
     df_data = df_data.replace({np.nan: None})
+
+    print(df_data.head())
     if not df_data.empty:
+        print("Adding data to Snowflake")
         snowflake_resource_con = context.resources.snowflake_resource
         load_data_to_snowflake(snowflake_resource_con = snowflake_resource_con, 
                                 df = df_data, 
