@@ -261,6 +261,10 @@ def pull_lwq_data(context: OpExecutionContext,
         final_df['t']
     )
 
+    # Replace np.nan with None
+    context.log.info("Replace np.nan with None and add lawa_site and council column")
+    final_df = final_df.replace({np.nan: None})
+
     # select data df, following columns: id, date, variable, value,  url, status_code,	error, site, variable, T, Value
     df_columns = ['id', 't', 'site', 'variable', 'value', 'error', 'status_code', 'url']
     df_data = final_df[df_columns]
@@ -271,11 +275,7 @@ def pull_lwq_data(context: OpExecutionContext,
     df_columns_meta = df_columns_meta.insert(0, 'id')
 
     df_metadata = final_df[df_columns_meta]
-    # todo: add to db
-
-    # Replace np.nan with None
-    context.log.info("Replace np.nan with None and add lawa_site and council column")
-    df_data = df_data.replace({np.nan: None})
+    df_metadata.columns = df_metadata.columns.str.replace(r'[^\w]', '_', regex=True)
 
     print(df_data.head())
     if not df_data.empty:
@@ -284,6 +284,12 @@ def pull_lwq_data(context: OpExecutionContext,
         load_data_to_snowflake(snowflake_resource_con = snowflake_resource_con, 
                                 df = df_data, 
                                 table_name =  "lwq_data",
+                                method='upsert',
+                                logger = context.log)
+        
+        load_data_to_snowflake(snowflake_resource_con = snowflake_resource_con, 
+                                df = df_metadata, 
+                                table_name =  "lwq_metadata",
                                 method='upsert',
                                 logger = context.log)
     
