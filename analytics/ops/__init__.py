@@ -70,18 +70,37 @@ def _replace_symbols(value):
             return f"greater_than_{value[1:]}"
     return value
 
+def _convert_dict_values_to_strings(data):
+    for row in data:
+        for key in row:
+            row[key] = str(row[key])  # Convert each value to string
+    return data
+
 def _upsert_data(cursor, table_name, data_to_insert, primary_key):
     if not data_to_insert:
         return  # Exit if there's no data to insert
-    
+
     # Replace symbols in the 'value' column and convert all values to string
     for row in data_to_insert:
         if 'value' in row:
             row['value'] = _replace_symbols(row['value'])
             row['value'] = str(row['value'])        
 
+    data_to_insert = _convert_dict_values_to_strings(data_to_insert)
+
     # Extract columns from data
     columns = data_to_insert[0].keys()
+
+    # Add missing columns to the table
+    for column in columns:
+        try:
+            # Assuming default type VARCHAR(255) for simplicity; adjust as needed
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column} VARCHAR(255)")
+            print(f"Added column {column} to table {table_name}")
+        except Exception as e:
+            print(f"Error adding column {column} to table {table_name}: {e}")
+    
+    # Re-fetch columns to include any new ones added
     columns_list = ', '.join(columns)
     
     # Handle values and convert None to NULL
@@ -89,6 +108,8 @@ def _upsert_data(cursor, table_name, data_to_insert, primary_key):
         f"({', '.join([f'NULL' if value is None else repr(value) for value in row.values()])})"
         for row in data_to_insert
     ])
+
+    print("here")
     
     # Define the INSERT SQL statement with WHERE NOT EXISTS clause
     insert_stmt = f"""
@@ -101,13 +122,14 @@ def _upsert_data(cursor, table_name, data_to_insert, primary_key):
         WHERE target.{primary_key} = source.{primary_key}
     );
     """
-
+    
     try:
         # Execute the INSERT statement
         cursor.execute(insert_stmt)
     except Exception as e:
         print(f"Error executing upsert: {e}")
         raise
+
 
 def _insert_data_snowflake(snowflake_resource_con: Any, df: pd.DataFrame, table_name: str, logger: Any, council: Optional[str] = None) -> None:
     """Insert data into a Snowflake table, creating the table if it does not exist.

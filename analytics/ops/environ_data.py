@@ -266,7 +266,7 @@ def pull_lwq_data(context: OpExecutionContext,
     final_df = final_df.replace({np.nan: None})
 
     # select data df, following columns: id, date, variable, value,  url, status_code,	error, site, variable, T, Value
-    df_columns = ['id', 't', 'site', 'variable', 'value', 'error', 'status_code', 'url']
+    df_columns = ['id', 't', 'site', 'lawasiteid', "lawaname", 'variable', 'value', 'error', 'status_code', 'url']
     df_data = final_df[df_columns]
 
     # select all other columns that are not in df_columns, plus id

@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: proj3_raw
+    database: DW
+    schema: PROJ3_RAW
+    tables:
+      - name: lwq_data
+      - name: lwq_metadata
+      - name: transfer_table
+      - name: lwq_wfs_table_latest
+
+  - name: marts
+    database: DW
+    schema: MARTS_MARTS
+    tables:
+      - name: FACT_RECORDS
+  
