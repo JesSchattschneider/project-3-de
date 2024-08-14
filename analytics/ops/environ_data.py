@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dagster import op, OpExecutionContext, Config
 from analytics.ops import load_data_to_snowflake 
 import numpy as np
+import re
 
 class EnvironDataConfig(Config):
     date_start: str
@@ -13,6 +14,42 @@ class EnvironDataConfig(Config):
     date_end: str = "2030-01-01"
     councils: list[str] = ["ecan"]
 
+# Function to identify columns with values exceeding max_length
+def find_exceeding_columns(df, max_length):
+    # Dictionary to store columns with exceeding values
+    exceeding_columns = {}
+    
+    for col in df.columns:
+        try:
+            column_data = df[col]
+            
+            # Check if column_data is a DataFrame
+            if isinstance(column_data, pd.DataFrame):
+                if column_data.shape[1] == 1:
+                    # Convert single-column DataFrame to Series
+                    column_data = column_data.iloc[:, 0]
+                else:
+                    # Handle DataFrame with multiple columns (e.g., take the first column)
+                    print(f"Column {col} is a DataFrame with multiple columns. Using the first column.")
+                    column_data = column_data.iloc[:, 0]  # or handle it based on your needs
+            
+            # Ensure column_data is a Series
+            if isinstance(column_data, pd.Series):
+                column_data = column_data.astype(str)
+                max_length_in_col = column_data.str.len().max()
+                if max_length_in_col > max_length:
+                    exceeding_columns[col] = max_length_in_col
+            else:
+                print(f"Column {col} is not a pandas Series. It is a {type(column_data)}.")
+        except Exception as e:
+            print(f"Error processing column {col}: {e}")
+    
+    return exceeding_columns
+
+# Function to truncate values to a maximum length
+def truncate_value(value, max_length):
+    return str(value)[:max_length]
+    
 def fetch_status_code(url_info, logger):
     url = url_info["url"]
     site = url_info.get("site")
@@ -92,7 +129,7 @@ def pull_lwq_data(context: OpExecutionContext,
                   config: EnvironDataConfig,
                   sites: list[str] = [],
                   variables: list[str] = [],
-                  limit: int = 5) -> pd.DataFrame:
+                  limit: int = 5000000000) -> pd.DataFrame:
     context.log.info("Opening file with URLs")
     root_urls = []
 
@@ -264,7 +301,16 @@ def pull_lwq_data(context: OpExecutionContext,
     # Replace np.nan with None
     context.log.info("Replace np.nan with None and add lawa_site and council column")
     final_df = final_df.replace({np.nan: None})
+    # Identify columns
+    max_length = 253 # Define the maximum length
 
+    # Apply truncation to all columns
+    final_df = final_df.applymap(lambda x: truncate_value(x, max_length))
+    print("DataFrame with truncated values")
+
+    # remove special characters
+    final_df = final_df.replace(r'[^\w\s]', '', regex=True)
+    
     # select data df, following columns: id, date, variable, value,  url, status_code,	error, site, variable, T, Value
     df_columns = ['id', 't', 'site', 'lawasiteid', "lawaname", 'variable', 'value', 'error', 'status_code', 'url']
     df_data = final_df[df_columns]
@@ -277,7 +323,6 @@ def pull_lwq_data(context: OpExecutionContext,
     df_metadata = final_df[df_columns_meta]
     df_metadata.columns = df_metadata.columns.str.replace(r'[^\w]', '_', regex=True)
 
-    print(df_data.head())
     if not df_data.empty:
         print("Adding data to Snowflake")
         snowflake_resource_con = context.resources.snowflake_resource

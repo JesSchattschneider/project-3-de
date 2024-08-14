@@ -1,2 +1,5 @@
 dbt-core==1.7.0
 dbt-snowflake==1.7.0
+confluent-kafka
+kafka-python
+streamlit

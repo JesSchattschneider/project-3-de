@@ -4,21 +4,62 @@ import pandas as pd
 from typing import Optional, Any
 
 # Sample data handling function
+# def parse_wfs_data(data: dict) -> pd.DataFrame:
+#     """Parses the wfs data."""
+#     root = ET.fromstring(data['raw_data'])
+#     records = []
+#     for feature in root.iter("{http://www.opengis.net/gml}featureMember"):
+#         record = {}
+#         for property in feature.iter():
+#             if property.tag != feature.tag:
+#                 property_name = property.tag.split("}")[1]
+#                 property_value = property.text
+#                 record[property_name] = property_value
+#         records.append(record)
+#     df = pd.DataFrame(records)
+#     df = df.fillna(-99999)
+#     return df
+
+import pandas as pd
+import xml.etree.ElementTree as ET
+
 def parse_wfs_data(data: dict) -> pd.DataFrame:
-    """Parses the wfs data."""
+    """Parses the WFS data and extracts latitude and longitude."""
     root = ET.fromstring(data['raw_data'])
     records = []
+    
     for feature in root.iter("{http://www.opengis.net/gml}featureMember"):
         record = {}
+        # Extract lat and long from <gml:pos>
+        pos_element = feature.find(".//{http://www.opengis.net/gml}pos")
+        if pos_element is not None:
+            # Split lat and long and add to record
+            lat_long = pos_element.text.strip().split()
+            if len(lat_long) == 2:
+                record['latitude'] = lat_long[0]
+                record['longitude'] = lat_long[1]
+            else:
+                record['latitude'] = None
+                record['longitude'] = None
+        
+        # Extract other properties
         for property in feature.iter():
             if property.tag != feature.tag:
                 property_name = property.tag.split("}")[1]
                 property_value = property.text
                 record[property_name] = property_value
+        
         records.append(record)
+    
+    # Create DataFrame
     df = pd.DataFrame(records)
+    
+    # Fill NaN values with -99999
     df = df.fillna(-99999)
+    
     return df
+
+
 
 @op(required_resource_keys={"snowflake_resource"})
 def get_one(context):
@@ -96,9 +137,10 @@ def _upsert_data(cursor, table_name, data_to_insert, primary_key):
         try:
             # Assuming default type VARCHAR(255) for simplicity; adjust as needed
             cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column} VARCHAR(255)")
-            print(f"Added column {column} to table {table_name}")
+            # print(f"Added column {column} to table {table_name}")
         except Exception as e:
-            print(f"Error adding column {column} to table {table_name}: {e}")
+            continue
+            # print(f"Error adding column {column} to table {table_name}: {e}")
     
     # Re-fetch columns to include any new ones added
     columns_list = ', '.join(columns)
@@ -109,7 +151,6 @@ def _upsert_data(cursor, table_name, data_to_insert, primary_key):
         for row in data_to_insert
     ])
 
-    print("here")
     
     # Define the INSERT SQL statement with WHERE NOT EXISTS clause
     insert_stmt = f"""
@@ -127,7 +168,7 @@ def _upsert_data(cursor, table_name, data_to_insert, primary_key):
         # Execute the INSERT statement
         cursor.execute(insert_stmt)
     except Exception as e:
-        print(f"Error executing upsert: {e}")
+        # print(f"Error executing upsert: {e}")
         raise
 
 
