@@ -9,7 +9,8 @@ from analytics.ops import parse_wfs_data, load_data_to_snowflake
 # Define columns to be used in the WFS data
 VARS = ["councilsiteid", "siteid", "lawasiteid",
         "lfenzid", "ltype", "geomorphicltype",
-        "region", "agency", "catchment", "lwquality", "macro", "swquality"]
+        "region", "agency", "catchment", "lwquality", "macro", "swquality",
+        "latitude", "longitude"]
 
 @op(required_resource_keys={"snowflake_resource"})
 def process_wfs_data(context: OpExecutionContext,
