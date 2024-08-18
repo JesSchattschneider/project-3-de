@@ -3,23 +3,6 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 from typing import Optional, Any
 
-# Sample data handling function
-# def parse_wfs_data(data: dict) -> pd.DataFrame:
-#     """Parses the wfs data."""
-#     root = ET.fromstring(data['raw_data'])
-#     records = []
-#     for feature in root.iter("{http://www.opengis.net/gml}featureMember"):
-#         record = {}
-#         for property in feature.iter():
-#             if property.tag != feature.tag:
-#                 property_name = property.tag.split("}")[1]
-#                 property_value = property.text
-#                 record[property_name] = property_value
-#         records.append(record)
-#     df = pd.DataFrame(records)
-#     df = df.fillna(-99999)
-#     return df
-
 import pandas as pd
 import xml.etree.ElementTree as ET
 
@@ -48,7 +31,13 @@ def parse_wfs_data(data: dict) -> pd.DataFrame:
                 property_name = property.tag.split("}")[1]
                 property_value = property.text
                 record[property_name] = property_value
-        
+
+        # Add additional columns
+        record['council'] = data['council']
+        record['url'] = data['url']
+        record['status'] = data['status']
+        record['partition_key'] = data['partition_key']
+
         records.append(record)
     
     # Create DataFrame
@@ -56,10 +45,8 @@ def parse_wfs_data(data: dict) -> pd.DataFrame:
     
     # Fill NaN values with -99999
     df = df.fillna(-99999)
-    
+
     return df
-
-
 
 @op(required_resource_keys={"snowflake_resource"})
 def get_one(context):
@@ -144,35 +131,83 @@ def _upsert_data(cursor, table_name, data_to_insert, primary_key):
     
     # Re-fetch columns to include any new ones added
     columns_list = ', '.join(columns)
-    
     # Handle values and convert None to NULL
     values_list = ', '.join([
         f"({', '.join([f'NULL' if value is None else repr(value) for value in row.values()])})"
         for row in data_to_insert
     ])
 
-    
-    # Define the INSERT SQL statement with WHERE NOT EXISTS clause
-    insert_stmt = f"""
-    INSERT INTO {table_name} ({columns_list})
-    SELECT {', '.join([f'source.{col}' for col in columns])}
-    FROM (VALUES {values_list}) AS source ({columns_list})
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM {table_name} target
-        WHERE target.{primary_key} = source.{primary_key}
-    );
-    """
-    
-    try:
-        # Execute the INSERT statement
-        cursor.execute(insert_stmt)
-    except Exception as e:
-        # print(f"Error executing upsert: {e}")
-        raise
+    # Check if history table exists
+    history_table_name = "LWQ_DATA_HISTORY"
+    cursor.execute(f"SHOW TABLES LIKE '{history_table_name}'")
+    table_exists = cursor.fetchone() is not None
+
+    # Create the history table if it doesn't exist
+    if not table_exists:
+        cursor.execute(f"""
+            CREATE TABLE {history_table_name} AS
+            SELECT * FROM {table_name} LIMIT 0;
+        """)
+        cursor.execute(f"""
+            ALTER TABLE {history_table_name}
+            ADD COLUMN UPDATED_AT TIMESTAMP_NTZ(9) DEFAULT CURRENT_TIMESTAMP();
+        """)
+        print(f"History table {history_table_name} created.")
+
+    if table_name == 'lwq_data':
+        try:
+           # Prefix all columns with `target.`
+            print(table_name)
+            qualified_columns_list = ', '.join([f'target.{col}' for col in columns])
+
+            cursor.execute(f"""
+                INSERT INTO {history_table_name} ({columns_list}, CREATED_AT)
+                SELECT {qualified_columns_list}, target.CREATED_AT
+                FROM {table_name} target
+                JOIN (VALUES {values_list}) AS source ({columns_list})
+                ON target.{primary_key} = source.{primary_key}
+                WHERE target.VALUE != source.VALUE;
+            """)
+        except Exception as e:
+            print(f"Error inserting into history table: {e}")
+            raise
+
+        # Step 2: Perform the upsert (update or insert)
+        try:            
+            cursor.execute(f"""
+                MERGE INTO {table_name} AS target
+                USING (VALUES {values_list}) AS source ({columns_list})
+                ON target.{primary_key} = source.{primary_key}
+                WHEN MATCHED THEN
+                    UPDATE SET {', '.join([f'target.{col} = source.{col}' for col in columns])}
+                WHEN NOT MATCHED THEN
+                    INSERT ({columns_list})
+                    VALUES ({', '.join([f'source.{col}' for col in columns])});
+            """)
+        except Exception as e:
+            print(f"Error executing upsert: {e}")
+            raise    
+    else:      
+        
+        # Define the INSERT SQL statement with WHERE NOT EXISTS clause
+        upsert_stmt = f"""
+        INSERT INTO {table_name} ({columns_list})
+        SELECT {', '.join([f'source.{col}' for col in columns])}
+        FROM (VALUES {values_list}) AS source ({columns_list})
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM {table_name} target
+            WHERE target.{primary_key} = source.{primary_key}
+        );
+        """
+        try:
+            # Execute the INSERT statement
+            cursor.execute(upsert_stmt)
+        except Exception as e:
+            print(f"Error executing upsert: {e}")
 
 
-def _insert_data_snowflake(snowflake_resource_con: Any, df: pd.DataFrame, table_name: str, logger: Any, council: Optional[str] = None) -> None:
+def _insert_data_snowflake(snowflake_resource_con: Any, df: pd.DataFrame, table_name: str, logger: Any) -> None:
     """Insert data into a Snowflake table, creating the table if it does not exist.
 
     Args:
@@ -181,6 +216,10 @@ def _insert_data_snowflake(snowflake_resource_con: Any, df: pd.DataFrame, table_
         table_name (str): The name of the target table.
         logger (Any): Logger for logging information and errors.
     """
+    
+    # select unique councils from the dataframe, it should be a string
+    council = df['council'].unique()[0].lower()
+
     try:
             with snowflake_resource_con.get_connection() as conn:
                 with conn.cursor() as cursor:
@@ -193,10 +232,14 @@ def _insert_data_snowflake(snowflake_resource_con: Any, df: pd.DataFrame, table_
                     # Insert into latest table
                     latest_table_name = f"{table_name}_latest"
                     _create_table_if_not_exists(cursor, latest_table_name, df, logger)
+                    print("here")
 
-                    # Delete existing rows for the council in the latest table
-                    delete_stmt = f"DELETE FROM {latest_table_name} WHERE council = %s"
-                    cursor.execute(delete_stmt, (council,))
+                    # Try to delete existing rows for the council in the latest table
+                    try:
+                        delete_stmt = f"DELETE FROM {latest_table_name} WHERE council = %s"
+                        cursor.execute(delete_stmt, (council,))
+                    except Exception as e:
+                        print(f"Error deleting rows from latest table: {e}")
                     
                     # Insert new rows into the latest table
                     _insert_data(cursor, latest_table_name, data_to_insert)
@@ -210,8 +253,7 @@ def load_data_to_snowflake(snowflake_resource_con: Any,
                              df: pd.DataFrame, 
                              table_name: str,
                              logger: Any,
-                             method: str = "insert",
-                             council: str = None
+                             method: str = "insert"
                              ) -> None:
     """Insert data into a Snowflake table, creating the table if it does not exist.
 
@@ -227,11 +269,11 @@ def load_data_to_snowflake(snowflake_resource_con: Any,
         return
     
     if method == "insert":
-        logger.info("Inserting data into the database.")
-        _insert_data_snowflake(snowflake_resource_con, df, table_name, logger, council)
+        logger.info(f"Inserting data into the database: {table_name} table.")
+        _insert_data_snowflake(snowflake_resource_con, df, table_name, logger)
     
     if method == "upsert":
-        logger.info("Upserting data into the database.")
+        logger.info(f"Upserting data into the database: {table_name} table.")
 
         try:
             with snowflake_resource_con.get_connection() as conn:

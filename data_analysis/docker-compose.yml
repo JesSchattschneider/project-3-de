@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  streamlit-app:
+    build: .
+    ports:
+      - "8745:80"
+    # environment:
+    #   - SNOWFLAKE_USER=your_snowflake_user
+    #   - SNOWFLAKE_PASSWORD=your_snowflake_password
+    #   - SNOWFLAKE_ACCOUNT=your_snowflake_account
+    #   - SNOWFLAKE_WAREHOUSE=your_snowflake_warehouse
+    #   - SNOWFLAKE_DATABASE=your_snowflake_database
+    #   - SNOWFLAKE_SCHEMA=your_snowflake_schema
+    # command: ["streamlit", "run", "app.py", "--server.port=80", "--server.address=0.0.0.0"]

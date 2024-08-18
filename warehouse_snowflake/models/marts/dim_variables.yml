@@ -1,0 +1,27 @@
+models:
+  - name: dim_variables
+    description: "A model that combines lwq_data and transfer_table."
+    columns:
+      - name: id
+        description: "Unique identifier from lwq_data."
+        tests:
+          - not_null
+          - unique
+      - name: variable
+        description: "Variable name from lwq_data."
+        tests:
+          - not_null
+      - name: CREATED_AT
+        description: "Timestamp when the record was created."
+        tests:
+          - not_null
+      - name: agency
+        description: "Agency name from transfer_table."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["ac", "ecan", "es", "gw", "hbrc", "hrc", "nrc", "orc", "wrc"]
+      - name: callname
+        description: "Call name from transfer_table."
+        tests:
+          - not_null

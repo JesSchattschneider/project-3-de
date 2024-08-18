@@ -6,7 +6,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dagster import op, OpExecutionContext, Config
 from analytics.ops import load_data_to_snowflake 
 import numpy as np
-import re
 
 class EnvironDataConfig(Config):
     date_start: str
@@ -129,7 +128,7 @@ def pull_lwq_data(context: OpExecutionContext,
                   config: EnvironDataConfig,
                   sites: list[str] = [],
                   variables: list[str] = [],
-                  limit: int = 5000000000) -> pd.DataFrame:
+                  limit: int = 500000000) -> pd.DataFrame:
     context.log.info("Opening file with URLs")
     root_urls = []
 
@@ -310,6 +309,9 @@ def pull_lwq_data(context: OpExecutionContext,
 
     # remove special characters
     final_df = final_df.replace(r'[^\w\s]', '', regex=True)
+
+    # Select only the first occurrence of each duplicated ID
+    final_df = final_df.drop_duplicates(subset='id', keep='first')
     
     # select data df, following columns: id, date, variable, value,  url, status_code,	error, site, variable, T, Value
     df_columns = ['id', 't', 'site', 'lawasiteid', "lawaname", 'variable', 'value', 'error', 'status_code', 'url']
@@ -332,11 +334,11 @@ def pull_lwq_data(context: OpExecutionContext,
                                 method='upsert',
                                 logger = context.log)
         
-        load_data_to_snowflake(snowflake_resource_con = snowflake_resource_con, 
-                                df = df_metadata, 
-                                table_name =  "lwq_metadata",
-                                method='upsert',
-                                logger = context.log)
+        # load_data_to_snowflake(snowflake_resource_con = snowflake_resource_con, 
+        #                         df = df_metadata, 
+        #                         table_name =  "lwq_metadata",
+        #                         method='upsert',
+        #                         logger = context.log)
     
 
 

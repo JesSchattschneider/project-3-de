@@ -1,8 +1,8 @@
-# project-2-bootcamp
+# project-3-bootcamp
 
 ## Objective of the project
 
-This data engineering project involves in using Dagster to orchestrate a batch ELT solution to pull environmental data from 2 NZ regional councils, parsing the XML responses with a python based pipeline, updating a Database in Snowflake with new records, using DBT to prepare the tables to be used by consumers and then visualizing the results in a Streamlit app.
+This data engineering project involves in using Dagster to orchestrate a batch ELT solution to pull environmental data from two NZ regional councils, parsing the XML responses with a python based pipeline, updating a Database in Snowflake with new records, using DBT to prepare the tables to be used by consumers and then visualizing the results in a Streamlit app (in case additional data updates are required, data scientists could use this friendly platform to run new data pulls).
 
 The objective of this project is to is to provide an analytical instruments to presents lake health information accross NZ. Councils all around NZ collect a series of environmental data as part of their environmental programms and the following measurements are used to help identify the quality of the aquatic life in lakes:
 
@@ -12,51 +12,42 @@ The objective of this project is to is to provide an analytical instruments to p
 
 - Ammonia toxicity – a nutrient that can be toxic to aquatic life 
 
-This data is usually collected once a month at different dates and schedules across councils. This project will access the data servers of councils every hour to look for new data records. A Dagster job will handle the incremental updated to the RAW schema in Snowflake. DBT assets will be used to summarise the dataset and generate fact and dimension tables as well as a big table to be used in a streamlit project.
+This data is usually collected once a month at different dates and schedules across councils and sites. This project will access the data servers of councils every day to look for new data records. A Dagster job will handle the incremental updated to the RAW schema in Snowflake. DBT assets will be used to summarise the dataset and generate fact and dimension tables as well as a big table to be used in a streamlit project. Dagster GraphQ will also be used to trigger jobs from the streamlit app.
 
-The final product will allow users to select the start and end time that plots should be based on and inform when was the last day that data was collected for all three sites.
+The final product will allow users to visualise their data, diagnostic tables comparing the status of each data pull (success x fail) and submit new data pulls if required.
 
 ## Consumers of your data (What users would find your dataset useful?)
 
-Data scientists and general public that need information about the data collected in situ.
+Data scientists.
 
 ## Datasets your team have selected
 
-- Historical dataset: extracted from an internal DB and wrangled to meet the data structure returned from the API calls.
-  
-- Council's API endpoints
+- Council's API endpoints with the location on lakes sites
+and their corresponding environmental data
 
 
 ## Solution architecture
 
 ![alt text](images/diagram.png)
 
-- Airbyte (build custom connection to a private API):
-  - schedule new API requests every 1h
-  - save raw JSON to the DW DB in Snowflake inside the RAW schema (append as the attributes return arrays - we can not use the deduped strategy in this case as the response needs to be parsed) 
+- Council's API endpoints (Airbyte build custom connection to a private API):
+  - schedule new API requests once every day
+  - save to DW DB in Snowflake inside the RAW schema 
 - Snowflake
-  - RAW: 12 tables, one for each site (2) and endpoint (3) plus 6 to each historical dataset (connected to Airbytes)
-  - RAW_STAGING: latest parsed API response
-  - RAW_SILVER: the full datasets for each site + data type, which includes the historical dataset and the incremental loads
-  - RAW_MARTS: 1 fact table (records) and two dimensions (wind, temperature, summary table (min, max, mean, last_update)), a periodic snapshot table (per month, including number of records) and a big table.  
+  - RAW_STAGING: incremental table with all environmental data and another table with the lakes sites (also extracter from councils servers)
+  - RAW_MARTS: 1 basic fact table (records), three dimensions (error, sites, variables, and errors), summary table per (min, max, mean, last_update) and summary table with the percentage of sucessful data pulls per day), and an accumulating fact table (percentage of sucessful data since the first pull).  
 - Streamlit: present results
 
 ## Breakdown of tasks:
-- Create connection with the 
-- Schedule dagster jobs to run every 60 min
-- Create dbt project
-- Save and process historical records and add the final results as csvs in the seed/ folder
-- Parse latest API responses
-- Use time as incremental column to generate the complete datasets for each environmental data + site monitored in the silver schema
+- Create a pipeline in Dagster
+- Create data pull from councils servers (jobs)
+- Schedule dagster jobs to run every day
+- Create dbt project (orchestrated by Dagster)
+- Create dbt and dagster connection with Snowflake
+- Use created_datetime as incremental column to generate the complete datasets for each environmental data + site monitored 
 - Use data modelling concepts to generate dim and fact tables
 - Deploy the ELT pipeline orchestrated by dagster in the cloud
 - Create a streamlit project to showcase the data and deploy it to the cloud using a CI/CD pipeline 
-
-
-
-
-
-
 
 ## Steps to build a dbt project
 

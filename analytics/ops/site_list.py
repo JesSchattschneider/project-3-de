@@ -1,7 +1,6 @@
 import pandas as pd
-from dagster import OpExecutionContext, op
+from dagster import OpExecutionContext, op, Config
 import requests
-import csv
 import datetime
 import numpy as np
 from analytics.ops import parse_wfs_data, load_data_to_snowflake
@@ -10,13 +9,23 @@ from analytics.ops import parse_wfs_data, load_data_to_snowflake
 VARS = ["councilsiteid", "siteid", "lawasiteid",
         "lfenzid", "ltype", "geomorphicltype",
         "region", "agency", "catchment", "lwquality", "macro", "swquality",
-        "latitude", "longitude"]
+        "latitude", "longitude", "council", "url", "status", "partition_key"]
+
+class SitesDataConfig(Config):
+    councils: list[str]
+    modules: list[str]
+    vars: list[str] = VARS
 
 @op(required_resource_keys={"snowflake_resource"})
 def process_wfs_data(context: OpExecutionContext,
-                     modules: list[str],
-                     vars: list[str] = VARS) -> pd.DataFrame:
+                     config: SitesDataConfig
+                     ) -> pd.DataFrame:
     """Processes WFS data for the given council partition."""
+
+    # Read configs
+    councils = config.councils
+    modules = config.modules
+    vars = config.vars
 
     context.log.info("Opening file with URLs")
 
@@ -41,6 +50,10 @@ def process_wfs_data(context: OpExecutionContext,
         return pd.DataFrame()  # Return an empty DataFrame in case of error
 
     context.log.info("Filtering data based on partition")
+
+    # keep only the rows that are in the councils list
+    councils_wfs = councils_wfs[councils_wfs["council"].str.lower().isin(councils)]
+    print(councils_wfs)
     
     # for each row in the dataframe, loop through the rows and get sites
     results = []
@@ -50,18 +63,21 @@ def process_wfs_data(context: OpExecutionContext,
 
         response = requests.get(url=row["wfs"])
         data = {
-            "council": row["council"],
+            "council": council_str,
             "url": row["wfs"],
             "status": "success" if response.status_code == 200 else "failed",
-            "partition_key": context.partition_key,
+            "partition_key": council_str,
             "creation_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "raw_data": response.content if response.status_code == 200 else response.text
         }
         results.append(data)
+        # delete data and council_str
+        del data, council_str
 
     context.log.info("Parsing WFS data")
-    df = pd.concat([parse_wfs_data(result) for result in results if result['status'] == 'success'], ignore_index=True)
     
+    df = pd.concat([parse_wfs_data(result) for result in results if result['status'] == 'success'], ignore_index=True)
+
     context.log.info("Wrangling WFS data")
     df.columns = map(str.lower, df.columns)
     df = df[df.columns.intersection(vars)]
@@ -71,7 +87,6 @@ def process_wfs_data(context: OpExecutionContext,
             context.log.info(f"Adding column for {var} to WFS dataframe")
             df[var] = np.nan
 
-    df['partition_key'] = context.partition_key
     data_raw = df.copy()
 
     context.log.info("Processing modules")
@@ -92,6 +107,7 @@ def process_wfs_data(context: OpExecutionContext,
 
         # Filter data based on module
         df = data_raw[data_raw[var_module].str.lower().isin(["y", "yes", "true"])]
+        df = df.drop_duplicates(subset=['siteid', 'councilsiteid', 'lawasiteid'], keep='first')
 
         if len(df) == 0:
             context.log.info(f"No sites found for {module} module {var_module}")
@@ -101,13 +117,11 @@ def process_wfs_data(context: OpExecutionContext,
             context.log.info("Replace np.nan with None and add lawa_site and council column")
             df = df.replace({np.nan: None})
             df['lawa_site'] = "yes"
-            df["council"] = council_str
 
             context.log.info(f"Add to DB: Found sites for {module} module")
             snowflake_resource_con = context.resources.snowflake_resource
             load_data_to_snowflake(snowflake_resource_con = snowflake_resource_con, 
                                      df = df, 
                                      table_name =  f"{module}_wfs_table",
-                                     council = council_str,
                                      logger = context.log)
     return df
