@@ -1,0 +1,31 @@
+-- https://github.com/dagster-io/dagster/discussions/12180
+-- {{ config(
+--     materialized="incremental",
+--     incremental_strategy="delete+insert"
+-- ) }}
+
+-- {% set max_time %}
+--   {% if is_incremental() %}
+--     (select max(CREATED_AT) from {{ this }})
+--   {% else %}
+--     null
+--   {% endif %}
+-- {% endset %}
+
+-- WITH base_data AS (
+--     SELECT 
+--         * 
+--     FROM {{ source('proj3_raw', 'lwq_metadata') }}
+--     WHERE 
+--         {% if is_incremental() %}
+--         CREATED_AT > {{ max_time }}
+--         {% endif %}
+-- )
+
+-- {{ dbt_utils.unpivot(
+--     relation=base_data,
+--     cast_to="string",  -- Change this to the appropriate data type if needed
+--     exclude=["id", "created_at"],  -- These are your ID columns to keep as is
+--     field_name="variable",  -- The column where your original column names will be stored
+--     value_name="value"  -- The column where your original column values will be stored
+-- ) }}

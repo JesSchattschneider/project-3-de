@@ -3,7 +3,7 @@ from analytics.resources import snowflake_resource
 from analytics.ops import get_one
 from analytics.ops.site_list import process_wfs_data
 from analytics.ops.environ_data import pull_lwq_data
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 @job(resource_defs={"snowflake_resource": snowflake_resource})
@@ -13,14 +13,12 @@ def my_snowflake_job():
 # Partition configuration
 COUNCILS = [
     "ecan",
-    "gdc",
+    "es",
 ]
 
 # Define any additional modules or variables if needed
 MODULES = [
-    "lwq", 
-    "swq", 
-    "mac"
+    "lwq"
 ]
 
 # Define static partitioned config
@@ -31,28 +29,33 @@ def council_config(partition_key: str):
             "process_wfs_data": {
                 "inputs": {
                     "modules": MODULES, 
+                    "councils": [partition_key]
                 }
             }
         }
     }
 
-# Define daily partitioned job
-@daily_partitioned_config(start_date=datetime(2024, 1, 1))
+
+@daily_partitioned_config(start_date= datetime(2024, 1, 1))
 def env_data_etl_daily_partition(start: datetime, _end: datetime):
+    start = (datetime.now() - timedelta(days=1))
+
     return {
         "ops": {
             "pull_lwq_data": {
                 "config": {
-                    "date_start": start.strftime("%Y-%m-%d")
+                    "date_start": start.strftime("%Y-%m-%d"),
+                    "councils": ["ecan"]
                 }
             }
         }
     }
 
-@job(config=council_config, resource_defs={"snowflake_resource": snowflake_resource})
-def update_wfs_job():
-    process_wfs_data()
 
 @job(config=env_data_etl_daily_partition, resource_defs={"snowflake_resource": snowflake_resource})
-def pull_environ_data():
+def run_etl_all_councils():
     pull_lwq_data()
+
+@job(config=council_config, resource_defs={"snowflake_resource": snowflake_resource})
+def get_lake_sites():
+    process_wfs_data()

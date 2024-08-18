@@ -21,7 +21,7 @@ WITH data_tbl AS (
               CASE
                   WHEN TRY_TO_TIMESTAMP(lwq.t, 'YYYYMMDDTHH24MISS') IS NOT NULL THEN TRY_TO_TIMESTAMP(t, 'YYYYMMDDTHH24MISS')
                   WHEN TRY_TO_TIMESTAMP(lwq.t, 'YYYY-MM-DDTHH24:MI:SS') IS NOT NULL THEN TRY_TO_TIMESTAMP(t, 'YYYY-MM-DDTHH24:MI:SS')
-                  -- -- Add more formats as needed
+                  -- Add more formats as needed
                   -- ELSE NULL -- Handle unsupported formats
               END
       END AS datetime_var,
@@ -29,13 +29,20 @@ WITH data_tbl AS (
       lwq.SITE AS site_id,
       lwq.LAWANAME AS variable,
       lwq.VALUE as RAW_VALUE,
-      -- Extract numeric value or put non-numeric values into censored column
-      CASE 
-          WHEN REGEXP_LIKE(lwq.VALUE, '^[0-9]+(\.[0-9]+)?$') THEN VALUE::FLOAT  -- Extract numeric values
-          ELSE NULL
+      -- Extract the numeric value after 'than_' and cast it to FLOAT with conditional logic
+      CASE
+         WHEN lwq.VALUE LIKE '%than_%' THEN
+            REGEXP_SUBSTR(lwq.VALUE, '[0-9]+(\.[0-9]+)?$')::FLOAT
+          --when value is None, return NULL
+          when lwq.VALUE = 'None' then NULL 
+          WHEN lwq.VALUE = 'missing' THEN NULL
+          WHEN lwq.VALUE = 'NA' THEN NULL
+          WHEN lwq.VALUE = '' THEN NULL
+         ELSE lwq.VALUE::FLOAT  -- or some other default value
       END AS value_numeric,
+
       REGEXP_REPLACE(lwq.VALUE, '[0-9]', '') AS censored,
-      lwq.URL,
+      lwq.URL AS data_url,
       lwq.CREATED_AT AS data_created_at,
       current_timestamp() AS last_updated,
       trans.*
@@ -49,6 +56,18 @@ WITH data_tbl AS (
     {% if is_incremental() %}
     WHERE lwq.CREATED_AT > {{ max_time }}
     {% endif %}
+),
+
+-- Adjust the value based on the censored column
+adjusted_data AS (
+  SELECT
+    *,
+    CASE
+        WHEN POSITION('less' IN censored) > 0 THEN value_numeric / 2
+        WHEN POSITION('greater' IN censored) > 0 THEN value_numeric * 1.1
+        ELSE value_numeric
+    END AS adjusted_value
+  FROM data_tbl
 )
 
-SELECT * FROM data_tbl
+SELECT * FROM adjusted_data
