@@ -5,3 +5,8 @@ pandas
 snowflake-connector-python
 streamlit
 plotly
+confluent-kafka
+kafka-python
+streamlit_extras
+dagster-graphql
+gql
