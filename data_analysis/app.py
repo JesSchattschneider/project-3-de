@@ -63,10 +63,10 @@ def update_wfs_dagster(council: str, module: str = ["lwq"]) -> str:
     try:
         # Trigger the Dagster job and get the run ID
         response = client.submit_job_execution(
-            'update_wfs_job',
+            'get_lake_sites',
             repository_location_name="analytics",
-            run_config={"ops": {"process_wfs_data": {"inputs": {"modules": module}}}},
-            tags={"dagster/partition": "{council}"}
+            run_config={"ops": {"process_wfs_data": {"config": {"modules": ["lwq"],
+                                                                "councils": [council]}}}}
         )
         # Extract the run ID from the response
         new_run_id = response
@@ -77,8 +77,8 @@ def update_wfs_dagster(council: str, module: str = ["lwq"]) -> str:
 
 with st.sidebar: #1st filter
     st.title("Filters")                                     
-    COUNCIL = st.selectbox("Select your council", ("ecan", "gdc", "es")) #1st filter
-    MODULE = st.selectbox("Select your module", ("lwq", "swq", "gw")) #2nd filter
+    COUNCIL = st.selectbox("Select your council", ("ecan", "gw", "es")) #1st filter
+    MODULE = st.selectbox("Select your module", ("lwq")) #2nd filter
 
 if COUNCIL and MODULE:
     # Fetch summary data from FACT_RECORDS table based on filters  
@@ -243,7 +243,6 @@ with tab2:
             if email == actual_email and password == actual_password:
                 st.session_state.logged_in = True
                 placeholder.empty()
-                st.experimental_rerun()  # Rerun the app to reflect the logged-in state
             else:
                 st.error("Login failed")
 
