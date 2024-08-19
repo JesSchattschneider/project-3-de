@@ -9,9 +9,11 @@ import numpy as np
 
 class EnvironDataConfig(Config):
     date_start: str
-    # TODO: convert date_start to datetime and set date_end to date_start + 1 year
     date_end: str = "2030-01-01"
     councils: list[str] = ["ecan"]
+    sites: list[str] = []
+    variables: list[str] = []
+    limit: int = 500000000
 
 # Function to identify columns with values exceeding max_length
 def find_exceeding_columns(df, max_length):
@@ -125,16 +127,19 @@ def fetch_status_code(url_info, logger):
     
 @op(required_resource_keys={"snowflake_resource"})
 def pull_lwq_data(context: OpExecutionContext,
-                  config: EnvironDataConfig,
-                  sites: list[str] = [],
-                  variables: list[str] = [],
-                  limit: int = 500000000) -> pd.DataFrame:
+                  config: EnvironDataConfig
+                  ) -> pd.DataFrame:
     context.log.info("Opening file with URLs")
     root_urls = []
 
     # Read date range from config
     date_start = config.date_start
     date_end = config.date_end
+    sites = config.sites
+    variables = config.variables
+    limit = config.limit
+    councils = config.councils
+
     context.log.info(f"Date range: {date_start} to {date_end}")
 
     try:
@@ -157,7 +162,7 @@ def pull_lwq_data(context: OpExecutionContext,
         context.log.error(f"Error getting sites from snowflake: {e}")
         return pd.DataFrame()  # Return an empty DataFrame in case of error
         
-    context.log.info(f"Councils selected: {config.councils}")
+    context.log.info(f"Councils selected: {councils}")
 
     if not variables:
         try:
@@ -181,7 +186,7 @@ def pull_lwq_data(context: OpExecutionContext,
             return pd.DataFrame()  # Return an empty DataFrame in case of error
 
     urls = []
-    for council in config.councils:
+    for council in councils:
         # select the value in column 3 where column 0 is equal to council
         root_urls = urls_all.loc[urls_all['agency'] == council, 'soslwq'].values[0]
         context.log.info(f"Retrieved root URLs: {root_urls}")

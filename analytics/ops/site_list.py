@@ -53,7 +53,6 @@ def process_wfs_data(context: OpExecutionContext,
 
     # keep only the rows that are in the councils list
     councils_wfs = councils_wfs[councils_wfs["council"].str.lower().isin(councils)]
-    print(councils_wfs)
     
     # for each row in the dataframe, loop through the rows and get sites
     results = []
