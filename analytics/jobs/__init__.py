@@ -1,14 +1,9 @@
 from dagster import job, static_partitioned_config, daily_partitioned_config
 from analytics.resources import snowflake_resource
-from analytics.ops import get_one
 from analytics.ops.site_list import process_wfs_data
 from analytics.ops.environ_data import pull_lwq_data
 from datetime import datetime, timedelta
 
-
-@job(resource_defs={"snowflake_resource": snowflake_resource})
-def my_snowflake_job():
-    get_one()
 
 # Partition configuration
 COUNCILS = [

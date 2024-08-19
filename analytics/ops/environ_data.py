@@ -308,13 +308,16 @@ def pull_lwq_data(context: OpExecutionContext,
     print("DataFrame with truncated values")
 
     # remove special characters
-    final_df = final_df.replace(r'[^\w\s]', '', regex=True)
+    # following columns should not be cleaned for special characters: id, date, variable, value,  url, status_code,	error, site, variable, T, Value
+    df_columns = ['id', 't', 'site', 'lawasiteid', "lawaname", 'variable', 'value', 'error', 'status_code', 'url']
+
+    # Apply the replacement only to the columns that are not in the exclude list
+    final_df.loc[:, ~final_df.columns.isin(df_columns)] = final_df.loc[:, ~final_df.columns.isin(df_columns)].replace(r'[^\w\s]', '', regex=True)
 
     # Select only the first occurrence of each duplicated ID
     final_df = final_df.drop_duplicates(subset='id', keep='first')
     
     # select data df, following columns: id, date, variable, value,  url, status_code,	error, site, variable, T, Value
-    df_columns = ['id', 't', 'site', 'lawasiteid', "lawaname", 'variable', 'value', 'error', 'status_code', 'url']
     df_data = final_df[df_columns]
 
     # select all other columns that are not in df_columns, plus id

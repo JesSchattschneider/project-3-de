@@ -13,6 +13,7 @@
 
 WITH data_tbl AS (
   SELECT 
+      {{ dbt_utils.generate_surrogate_key(['id']) }} AS id_record,
       lwq.id,
       -- Handle missing values in the 't' column
       CASE 
@@ -37,6 +38,7 @@ WITH data_tbl AS (
           when lwq.VALUE = 'None' then NULL 
           WHEN lwq.VALUE = 'missing' THEN NULL
           WHEN lwq.VALUE = 'NA' THEN NULL
+          WHEN lwq.VALUE = '*' THEN NULL
           WHEN lwq.VALUE = '' THEN NULL
          ELSE lwq.VALUE::FLOAT  -- or some other default value
       END AS value_numeric,
@@ -70,4 +72,18 @@ adjusted_data AS (
   FROM data_tbl
 )
 
-SELECT * FROM adjusted_data
+SELECT
+    ad.*,
+    dv.id_variable AS id_variable,
+    ds.id_site AS id_site,
+    de.id_error AS id_error
+FROM adjusted_data ad
+INNER JOIN {{ ref('dim_variables') }} dv
+  ON ad.id = dv.id
+
+INNER JOIN {{ ref('dim_sites') }} ds
+  ON ad.id = ds.id
+
+INNER JOIN {{ ref('dim_error') }} de
+  ON ad.id = de.id
+

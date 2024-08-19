@@ -1,9 +1,5 @@
 {{ config(
-    materialized="table",
-    depends_on=[
-            'MARTS_MARTS.FACT_RECORDS',
-            'MARTS_MARTS.LWQ_WFS_TABLE_LATEST'
-        ]
+    materialized="table"
 ) }}
 
 SELECT
@@ -20,7 +16,7 @@ SELECT
     MIN(fr.VALUE_NUMERIC) AS min_value,
     MAX(fr.CREATED_AT) AS last_updated_at,
     MIN(fr.CREATED_AT) AS first_updated_at
-FROM {{ source('marts', 'FACT_RECORDS') }} fr
+FROM {{ ref('fact_records') }} fr
 WHERE fr.VALUE_NUMERIC IS NOT NULL
 AND EXISTS (
     SELECT 1

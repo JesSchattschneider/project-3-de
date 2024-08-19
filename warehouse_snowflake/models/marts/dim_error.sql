@@ -1,27 +1,24 @@
-{{ config(
-    materialized="incremental",
-    incremental_strategy="delete+insert"
-) }}
+WITH error_tbl AS (
+    SELECT
+      {{ dbt_utils.generate_surrogate_key(['id', 'ERROR']) }} as id_error,
+      id,
+      SITE AS site_id,
+      VARIABLE AS variable_id,
+      ERROR,
+      STATUS_CODE,
+      CREATED_AT,
+      current_timestamp() as last_updated
+    FROM 
+        {{ source('proj3_raw', 'lwq_data') }} AS lwq
+)
 
-{% set max_time %}
-  {% if is_incremental() %}
-    (select max(CREATED_AT) from {{ this }})
-  {% else %}
-    null
-  {% endif %}
-{% endset %}
-
-select 
+SELECT DISTINCT
+    id_error,
     id,
-    SITE AS site_id,
-    VARIABLE AS variable_id,
+    site_id,
+    variable_id,
     ERROR,
     STATUS_CODE,
     CREATED_AT,
-    current_timestamp() as last_updated
-from {{ source('proj3_raw', 'lwq_data') }}
-where 
-    ERROR is not null
-    {% if is_incremental() %}
-    and CREATED_AT > {{ max_time }}
-    {% endif %}
+    last_updated
+FROM error_tbl

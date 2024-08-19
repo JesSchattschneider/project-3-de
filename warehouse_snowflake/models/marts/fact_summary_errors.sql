@@ -1,9 +1,6 @@
 {{ config(
     materialized="incremental",
-    incremental_strategy="delete+insert",
-    depends_on=[
-            'MARTS_MARTS.FACT_RECORDS'
-        ]
+    incremental_strategy="delete+insert"
 ) }}
 
 WITH source_data AS (
@@ -17,7 +14,7 @@ WITH source_data AS (
         COUNCILSITEID,
         -- CREATED_AT,
         CREATED_AT :: DATE AS created_at_date
-    FROM {{ source('marts', 'FACT_RECORDS') }}
+    FROM {{ ref('fact_records') }}
 ),
 
 -- Aggregate the data by site and variable, assuming you want to count errors and successes

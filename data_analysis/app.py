@@ -78,7 +78,7 @@ def update_wfs_dagster(council: str, module: str = ["lwq"]) -> str:
 with st.sidebar: #1st filter
     st.title("Filters")                                     
     COUNCIL = st.selectbox("Select your council", ("ecan", "gw", "es")) #1st filter
-    MODULE = st.selectbox("Select your module", ("lwq")) #2nd filter
+    MODULE = st.selectbox("Select your module", ("lwq", "swq", "mac")) #2nd filter
 
 if COUNCIL and MODULE:
     # Fetch summary data from FACT_RECORDS table based on filters  
@@ -94,6 +94,23 @@ if COUNCIL and MODULE:
     columns = [desc[0] for desc in cursor.description]
     
     sites = pd.DataFrame(rows, columns=columns)
+
+    # get logs
+    cursor = conn.cursor()
+    query = f"""
+        SELECT *
+        FROM {snowflake_database}.MARTS_MARTS.FACT_SUMMARY_ERRORS
+        WHERE COUNCIL = '{COUNCIL}'
+    """
+    
+    cursor.execute(query)
+    rows = cursor.fetchall()
+    columns = [desc[0] for desc in cursor.description]
+    
+    logs = pd.DataFrame(rows, columns=columns)
+    # sort by date
+    print(logs.columns)
+    logs = logs.sort_values('CREATED_AT_DATE', ascending=False)
 
 
 tab1, tab2 = st.tabs(["Summary data and site list", "Admin - update data"])
@@ -154,6 +171,11 @@ with tab1:
             
         )
         fig.update_layout(mapbox_style="light", mapbox_accesstoken=map_key)        
+
+        # Display the logs
+        st.header(f"{COUNCIL.upper()} - Logs for lake site data pulls")
+        # st.write("The table below shows the logs for the selected parameter.")
+        st.write(logs)
 
         # Display the summary data
         st.header(f"{COUNCIL.upper()} - Summary data for {PARAMETER}") 
