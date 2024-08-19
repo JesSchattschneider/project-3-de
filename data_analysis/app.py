@@ -7,6 +7,7 @@ import snowflake.connector
 import pandas as pd
 import plotly.express as px
 from streamlit_extras.metric_cards import style_metric_cards 
+from datetime import datetime
 
 
 # Load environment variables
@@ -36,14 +37,13 @@ conn = snowflake.connector.connect(
     schema=snowflake_schema
 )
 
+# Credentials for the admin login
+actual_email = "" #"admin@example.com"
+actual_password = "" #"adminpassword"
 
 # Initialize session state if not already done
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
-
-# Credentials for the admin login
-actual_email = "" #"admin@example.com"
-actual_password = "" #"adminpassword"
 
 # Initialize the URL for the GraphQL endpoint 
 url = f"{root_url}/graphql"  # Ensure the URL points to the GraphQL endpoint
@@ -57,6 +57,30 @@ transport = RequestsHTTPTransport(
 
 # Initialize the DagsterGraphQLClient
 client = DagsterGraphQLClient(hostname="dagster.prod",transport=transport)
+
+def update_lakes_data(council: str, start_date: datetime, end_date: datetime, param_selection: list, sites_selection: list) -> str:
+    start_date = start_date.strftime("%Y-%m-%d")
+    end_date = end_date.strftime("%Y-%m-%d")
+    councils = [council]
+
+    print(councils, start_date, end_date, param_selection, sites_selection)
+    try:
+        # Trigger the Dagster job and get the run ID
+        response = client.submit_job_execution(
+            'run_etl_all_councils',
+            repository_location_name="analytics",
+            run_config={"ops": {"pull_lwq_data": {"config": {"councils": councils,
+                                                             "date_start": start_date,
+                                                             "date_end": end_date,
+                                                             "variables": param_selection,
+                                                             "sites": sites_selection}}}}
+        )
+        # Extract the run ID from the response
+        new_run_id = response
+        return new_run_id
+    except Exception as exc:
+        st.error(f"Error triggering Dagster job: {exc}")
+        return None
 
 # Function to trigger Dagster job
 def update_wfs_dagster(council: str, module: str = ["lwq"]) -> str:
@@ -109,7 +133,6 @@ if COUNCIL and MODULE:
     
     logs = pd.DataFrame(rows, columns=columns)
     # sort by date
-    print(logs.columns)
     logs = logs.sort_values('CREATED_AT_DATE', ascending=False)
 
 
@@ -184,19 +207,18 @@ with tab1:
 
         st.plotly_chart(fig)
 
-        
         # Display the site list
         st.header(f"{COUNCIL.upper()} - Full site list published in the WFS")
         st.write(sites)
 
 with tab2:
     # Create an empty container
-   placeholder = st.empty()
+    placeholder = st.empty()
 
-   if st.session_state.logged_in:
+    if st.session_state.logged_in:
         # If already logged in, show the protected content
         st.success("Login successful")
-        
+
         # Show the content related to lake site list update
         st.header("Submit a lake site list update")
         st.write(
@@ -227,32 +249,39 @@ with tab2:
             "Select parameters that require update",
             ["NH4N", "CHLA", "TN", "TP", "ECOLI", "pH", "CYANOTOX", "CYANOTOT", "Secchi"]
         )
+
+        sites_lst = sites['COUNCILSITEID'].unique().tolist()
+
         sites_selection = st.multiselect(
             "Select sites that require update",
-            ["SITEID", "LAWASITEID", "COUNCILSITEID"]
+            sites_lst
         )
 
-        if start_date and end_date and param_selection and sites_selection:
-            # Check the number of sites and parameters selected
-            days_range = (end_date - start_date).days
-            if days_range <= 30 and len(sites_selection) <= 2 and len(param_selection) <= 2:
-                st.success("Your data update was accepted.")
-            else:
-                st.error(
-                    "Your data update was not accepted. The error messages below will guide you on the requirements. "
-                    "Please contact the admin for further assistance."
-                )
-                if len(sites_selection) > 2:
-                    st.warning("Select less than 2 sites.")
-                if len(param_selection) > 2:
-                    st.warning("Select less than 2 parameters.")
-                if days_range > 30:
-                    st.warning("Date range should be less than 30 days.")
+        if st.button("Submit data request"):
+            if start_date and end_date and param_selection and sites_selection:
+                days_range = (end_date - start_date).days
+                if days_range <= 30 and len(sites_selection) <= 2 and len(param_selection) <= 2:
+                    st.success("Your data update was accepted.")
+                    run_id = update_lakes_data(COUNCIL, start_date, end_date, param_selection, sites_selection)
+                    if run_id:
+                        st.success(f"Form submitted for {MODULE} module: {COUNCIL}. Job run ID: {run_id}")
+                    else:
+                        st.error("Failed to submit job.")
+                else:
+                    st.error(
+                        "Your data update was not accepted. The error messages below will guide you on the requirements. "
+                        "Please contact the admin for further assistance."
+                    )
+                    if len(sites_selection) > 2:
+                        st.warning("Select less than 2 sites.")
+                    if len(param_selection) > 2:
+                        st.warning("Select less than 2 parameters.")
+                    if days_range > 30:
+                        st.warning("Date range should be less than 30 days.")
+                st.write(f"Start date: {start_date}")
+                st.write(f"End date: {end_date}")
 
-            st.write(f"Start date: {start_date}")
-            st.write(f"End date: {end_date}")
-
-   else:
+    else:
         # Login form
         with placeholder.form("login"):
             st.markdown("#### Enter your credentials")
@@ -265,6 +294,68 @@ with tab2:
             if email == actual_email and password == actual_password:
                 st.session_state.logged_in = True
                 placeholder.empty()
+                st.success("Login successful")
+
+                # Show the content related to lake site list update
+                st.header("Submit a lake site list update")
+                st.write(
+                    "If you updated your lake sites, please submit a site update by clicking the Submit button below. "
+                    "This will trigger a Dagster job to fetch the latest data from the WFS endpoint."
+                )
+
+                if st.button("Submit"):
+                    run_id = update_wfs_dagster(COUNCIL)
+                    if run_id:
+                        st.success(f"Form submitted for {MODULE} module: {COUNCIL}. Job run ID: {run_id}")
+                    else:
+                        st.error("Failed to submit job.")
+
+                # Show the content related to lake data update
+                st.header("Submit a lake data update")
+                st.write(
+                    "If historical data requires update, please submit an update request by clicking the Submit button below. "
+                    "This will trigger a Dagster job to fetch the latest data from the WFS endpoint."
+                )
+
+                # Date range selection
+                start_date = st.date_input("Start date", value=None)
+                end_date = st.date_input("End date", value=None)
+
+                # Parameter and site selection
+                param_selection = st.multiselect(
+                    "Select parameters that require update",
+                    ["NH4N", "CHLA", "TN", "TP", "ECOLI", "pH", "CYANOTOX", "CYANOTOT", "Secchi"]
+                )
+
+                sites_lst = sites['COUNCILSITEID'].unique().tolist()
+
+                sites_selection = st.multiselect(
+                    "Select sites that require update",
+                    sites_lst
+                )
+
+                if st.button("Submit data request"):
+                    if start_date and end_date and param_selection and sites_selection:
+                        days_range = (end_date - start_date).days
+                        if days_range <= 30 and len(sites_selection) <= 2 and len(param_selection) <= 2:
+                            st.success("Your data update was accepted.")
+                            run_id = update_lakes_data(COUNCIL, start_date, end_date, param_selection, sites_selection)
+                            if run_id:
+                                st.success(f"Form submitted for {MODULE} module: {COUNCIL}. Job run ID: {run_id}")
+                            else:
+                                st.error("Failed to submit job.")
+                        else:
+                            st.error(
+                                "Your data update was not accepted. The error messages below will guide you on the requirements. "
+                                "Please contact the admin for further assistance."
+                            )
+                            if len(sites_selection) > 2:
+                                st.warning("Select less than 2 sites.")
+                            if len(param_selection) > 2:
+                                st.warning("Select less than 2 parameters.")
+                            if days_range > 30:
+                                st.warning("Date range should be less than 30 days.")
+                        st.write(f"Start date: {start_date}")
+                        st.write(f"End date: {end_date}")
             else:
                 st.error("Login failed")
-
