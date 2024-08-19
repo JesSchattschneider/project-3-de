@@ -13,7 +13,7 @@
 
 WITH data_tbl AS (
   SELECT 
-      {{ dbt_utils.generate_surrogate_key(['id']) }} AS id_record,
+      -- {{ dbt_utils.generate_surrogate_key(['id']) }} AS id_record,
       lwq.id,
       -- Handle missing values in the 't' column
       CASE 
@@ -72,18 +72,20 @@ adjusted_data AS (
   FROM data_tbl
 )
 
-SELECT
-    ad.*,
-    dv.id_variable AS id_variable,
-    ds.id_site AS id_site,
-    de.id_error AS id_error
-FROM adjusted_data ad
-INNER JOIN {{ ref('dim_variables') }} dv
-  ON ad.id = dv.id
+select * from adjusted_data
 
-INNER JOIN {{ ref('dim_sites') }} ds
-  ON ad.id = ds.id
+-- SELECT
+--     ad.*,
+--     dv.id_variable AS id_variable,
+--     ds.id_site AS id_site,
+--     de.id_error AS id_error
+-- FROM adjusted_data ad
+-- INNER JOIN {{ ref('dim_variables') }} dv
+--   ON ad.id = dv.id
 
-INNER JOIN {{ ref('dim_error') }} de
-  ON ad.id = de.id
+-- INNER JOIN {{ ref('dim_sites') }} ds
+--   ON ad.id = ds.id
+
+-- INNER JOIN {{ ref('dim_error') }} de
+--   ON ad.id = de.id
 

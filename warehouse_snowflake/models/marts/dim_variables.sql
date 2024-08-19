@@ -5,8 +5,8 @@ WITH variables_tbl AS (
         lwq.variable,
         lwq.CREATED_AT,
         trans.agency,
-        trans.callname,
-        {{ dbt_utils.generate_surrogate_key(['id', 'variable']) }} AS id_variable
+        trans.callname
+        -- {{ dbt_utils.generate_surrogate_key(['id', 'variable']) }} AS id_variable
     FROM 
         {{ source('proj3_raw', 'lwq_data') }} AS lwq
     LEFT JOIN 
@@ -16,7 +16,7 @@ WITH variables_tbl AS (
 )
 
 SELECT DISTINCT
-    id_variable,
+    -- id_variable,
     id,
     variable,
     CREATED_AT,

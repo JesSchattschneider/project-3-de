@@ -1,6 +1,6 @@
 WITH error_tbl AS (
     SELECT
-      {{ dbt_utils.generate_surrogate_key(['id', 'ERROR']) }} as id_error,
+      -- {{ dbt_utils.generate_surrogate_key(['id', 'ERROR']) }} as id_error,
       id,
       SITE AS site_id,
       VARIABLE AS variable_id,
@@ -13,7 +13,7 @@ WITH error_tbl AS (
 )
 
 SELECT DISTINCT
-    id_error,
+    -- id_error,
     id,
     site_id,
     variable_id,

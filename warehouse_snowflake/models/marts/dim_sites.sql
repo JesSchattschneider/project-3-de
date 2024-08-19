@@ -2,8 +2,7 @@ WITH sites_tbl AS (
     SELECT
         lwq.id,
         lwq.variable,
-        site_table.*,  -- This selects all columns from site_table
-        {{ dbt_utils.generate_surrogate_key(['id', 'SITEID', 'COUNCILSITEID']) }} AS id_site
+        site_table.* 
     FROM 
         {{ source('proj3_raw', 'lwq_data') }} AS lwq
     LEFT JOIN 
