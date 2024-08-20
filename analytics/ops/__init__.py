@@ -48,16 +48,6 @@ def parse_wfs_data(data: dict) -> pd.DataFrame:
 
     return df
 
-@op(required_resource_keys={"snowflake_resource"})
-def get_one(context):
-    snowflake_resource_con = context.resources.snowflake_resource
-    with snowflake_resource_con.get_connection() as conn:
-        with conn.cursor() as cursor:
-            # select from dim_temperature table where temperature = 11.83 limit 1
-            cursor.execute("SELECT * FROM dim_temperature WHERE temperature = 11.83 LIMIT 1")
-            result = cursor.fetchone()
-            context.log.info(f"Result: {result}")
-
 def _create_table_if_not_exists(cursor, table_name, df, logger, datetime_columns=None):
         cursor.execute(f"SHOW TABLES LIKE '{table_name}'")
         table_exists = cursor.fetchone() is not None
@@ -124,7 +114,6 @@ def _upsert_data(cursor, table_name, data_to_insert, primary_key):
         try:
             # Assuming default type VARCHAR(255) for simplicity; adjust as needed
             cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column} VARCHAR(255)")
-            # print(f"Added column {column} to table {table_name}")
         except Exception as e:
             continue
             # print(f"Error adding column {column} to table {table_name}: {e}")
@@ -157,7 +146,6 @@ def _upsert_data(cursor, table_name, data_to_insert, primary_key):
     if table_name == 'lwq_data':
         try:
            # Prefix all columns with `target.`
-            print(table_name)
             qualified_columns_list = ', '.join([f'target.{col}' for col in columns])
 
             cursor.execute(f"""
